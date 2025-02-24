@@ -3,8 +3,8 @@ import shutil
 
 from settings import SOURCE_DIR
 
-from utils import hide_original_file
-from g_code_parser import GCodeXXL
+from Lib.utils import hide_original_file
+from Lib.g_code_parser import GCodeXXL
 
 
 if __name__ == '__main__':

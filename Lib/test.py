@@ -1,4 +1,4 @@
-from g_code_line import GCodeLine
+from Lib.g_code_line import GCodeLine
 
 
 if __name__ == '__main__':
