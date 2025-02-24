@@ -4,7 +4,8 @@ from decimal import Decimal
 from settings import (
     G0_RAPID_MAX_SPEED,
     G0_RAPID_MIN_HEIGHT,
-    PROCESSED_FILES_DIR
+    PROCESSED_FILES_DIR,
+    REMOVE_BORING_HEAD_RAPIDS,
 )
 
 
@@ -52,7 +53,10 @@ class GCodeLine(object):
             'G2': 'ARC MOVE (CLOCKWISE)',
             'G3': 'ARC MOVE (COUNTER CLOCKWISE)',
             'XBLOWER': 'XBLOWER',
+            'C': 'C Line',
+            'F': 'F Line',
             'H': 'HEADER',
+            'B': 'BORING',
         }
 
         self.line_number = line_number + 1
@@ -69,35 +73,44 @@ class GCodeLine(object):
         self.S = None
         self.V = None
         self.T = None
+        self.Tool = None
 
         self.code_data = text_line.split(' ')
         self.code_type = self.code_data[0]
 
-        known_vars = ['X', 'Y', 'Z', 'I', 'J', 'V', 'T', 'S']
+        self.known_vars = ['X', 'Y', 'Z', 'I', 'J', 'V', 'T', 'S']
         if self.code_data[0] == 'H' or not self.code_data[0] in self._CODE_MAP:
-            """ This is the header line, or something like F=1
-                so don't change it
+            """ This is the header line so don't change it
             """
             self.formatted_text = self.original_text
-
+        elif self.code_data[0].startswith('C'):
+            self.code_type = 'C'
+            self.command_type = self._CODE_MAP['C']
+        elif self.code_data[0].startswith('F'):
+            self.code_type = 'F'
+            self.command_type = self._CODE_MAP['F']
         elif self.code_data[0] == 'XBLOWER':
             """ This is an XBLOWER command, make sure it looks like
                 XBLOWER E=0# T=105
                 and not
                 XBLOWER E=0# T105
+                or
+                XBLOWER E=0# T=T105
             """
             self.command_type == 'XBLOWER'
+            tool_var = ''
             for bit in self.code_data:
-                if bit.startswith('T') and not bit.startswith('T='):
-                    self.T = bit.replace('T', '')
-                    replace_str = 'T'
+                if bit.startswith('T=T'):
+                    replace_str = 'T=T'
+                    tool_var = bit
                 elif bit.startswith('T='):
-                    self.T = bit.replace('T=', '')
                     replace_str = 'T='
-            self.formatted_text = self.original_text.replace(
-                replace_str,
-                'T=f{self.T}'
-            )
+                    tool_var = bit
+                elif bit.startswith('T'):
+                    replace_str = 'T'
+                    tool_var = bit
+            self.T = tool_var.replace(replace_str, '')
+            self.Tool = int(self.T)
         else:
             """ This should be a normal G code command, make sure it looks like
                 G2 X=##.#### Y=##.#### Z=##.#### I=##.#### J=##.#### ; COMMENT
@@ -111,7 +124,7 @@ class GCodeLine(object):
 
             _bit = 0
             for bit in self.code_data:
-                for var_name in known_vars:
+                for var_name in self.known_vars:
                     if bit.startswith(var_name) and not bit.startswith(f"{var_name}="):
                         setattr(self, var_name, bit.replace(var_name, ''))
                         bit = bit.replace(var_name, f"{var_name}=")
@@ -119,9 +132,52 @@ class GCodeLine(object):
                         setattr(self, var_name, bit.replace(f"{var_name}=", ''))
                     self.code_data[_bit] = bit
                 _bit += 1
-            self.formatted_text = ' '.join(self.code_data).strip()
-            if self.comment:
-                self.formatted_text = f"{self.formatted_text} ;{self.comment}"
+
+        if self.T and self.T.startswith("T"):
+            self.T = self.T.replace("T", "")
+            self.Tool = int(self.T.replace("T", ""))
+        elif self.T:
+            self.Tool = int(self.T)
+
+        self.format_print_line()
+
+    def format_variables_into_print_line(self):
+        var_strings = []
+        for var in self.known_vars:
+            var_val = getattr(self, var)
+            if var_val:
+                var_strings.append(f"{var}={var_val}")
+        if var_strings:
+            var_string = ' '.join(var_strings)
+            self.formatted_text = f"{self.code_type} {var_string}"
+        else:
+            self.formatted_text = self.formatted_text
+
+        if self.comment:
+            self.formatted_text = f"{self.formatted_text} ; {self.comment}"
+
+    def format_print_line(self):
+        if self.code_type == 'XBLOWER':
+            self.formatted_text = f"XBLOWER E=0# T={self.Tool}"
+        elif self.code_type == "C":
+            self.formatted_text = "C=0"
+        elif self.code_type == "F":
+            self.formatted_text = "F=1"
+        elif self.code_type == "H":
+            self.formatted_text = self.formatted_text
+        else:
+            self.format_variables_into_print_line()
+
+    def change_to_boring_operation(self, current_bore_tool, current_spindle_speed):
+        old_code = self.code_type
+        self.code_type = 'B'
+        if not self.T:
+            self.T = current_bore_tool
+            self.Tool = current_bore_tool
+        if not self.S:
+            self.S = current_spindle_speed
+        self.command_type = self._CODE_MAP['B']
+        self.format_variables_into_print_line()
 
 
 class GCodeXXL(object):
@@ -140,6 +196,7 @@ class GCodeXXL(object):
             self.file_data = file.read().split('\n')
             self.file_header = self.file_data[0]
             self.processed_code_lines = []
+            self.compiled_lines = ''
             self.warnings = []
             self.errors = []
             self.info = []
@@ -152,6 +209,10 @@ class GCodeXXL(object):
         self.check_depth_of_cuts()
         self.check_rapid_height()
         self.correct_rapid_speed()
+        self.update_code_for_boring_head()
+
+    def compile_formatted_lines(self):
+        self.compiled_lines = '\n'.join([l.formatted_text for l in self.processed_code_lines])
 
     def write_new_files(self):
         self.copy_file_to_processed_files_dir('xxl')
@@ -212,8 +273,7 @@ class GCodeXXL(object):
             if line.code_type == 'G0' and line.V:
                 velocity = Decimal(line.V)
                 if velocity > (G0_RAPID_MAX_SPEED):
-                    velocity_text = f"V={G0_RAPID_MAX_SPEED:.0f}"
-                    line.formatted_text.replace(f"V={line.V}", velocity_text)
+                    line.V = G0_RAPID_MAX_SPEED
                     self.warnings.append(GCodeWarning(line, "corrected rapid speed"))
             _line += 1
 
@@ -246,6 +306,30 @@ class GCodeXXL(object):
                 )
                 # raise ProcessingException(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
 
+    def update_code_for_boring_head(self):
+        current_tool = None
+        current_bore_tool = None
+        current_spindle_speed = None
+        del_lines = []
+        for line in self.processed_code_lines:
+            if line.Tool and line.Tool != current_tool:
+                current_tool = line.Tool
+                print(f"setting current tool to {line.Tool}; {line.formatted_text}")
+            if current_tool and current_tool < 100:
+                if line.code_type == 'G0':
+                    current_spindle_speed = line.S
+                    print(f"Handling boring rapid - {line.original_text}")
+                    current_bore_tool = line.Tool
+                    # self.warnings.append(GCodeWarning(line, "This is a boring head operation, rapid not needed?"))
+                    if REMOVE_BORING_HEAD_RAPIDS:
+                        del_lines.append(line)
+                    else:
+                        line.formatted_text = f";*******BORING HEAD {line.formatted_text}************"
+                elif line.code_type.startswith('G'):
+                    line.change_to_boring_operation(current_bore_tool, current_spindle_speed)
+        for deleteme in del_lines:
+            self.processed_code_lines.remove(deleteme)
+
     def copy_file_to_processed_files_dir(self, extension):
         """Copies a file and renames it with a new extension."""
 
@@ -255,7 +339,7 @@ class GCodeXXL(object):
         out_file_name = f"{file_name_without_extension}.{extension}"
         out_file_path = os.path.join(PROCESSED_FILES_DIR, out_file_name)
         out_file = open(out_file_path, "w+")
-        out_file.write('\n'.join(self.file_data))
+        out_file.write(self.compiled_lines)
         out_file.close()
         self.info.append(
             GCodeInfo(None, f"File processed and copied to: {out_file_path}")

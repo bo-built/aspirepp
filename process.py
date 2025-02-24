@@ -1,6 +1,6 @@
 import os
 
-from settings import SOURCE_DIR
+from settings import SOURCE_DIR, ARCHIVE_PROCESSED_FILE
 
 from Lib.utils import (
     hide_original_file,
@@ -30,9 +30,9 @@ if __name__ == '__main__':
                     file_data = file.read().split('\n')
                     gcode = GCodeXXL(full_file_path)
                     gcode.process()
+                    gcode.compile_formatted_lines()
                     gcode.write_new_files()
-                confirm_hide_file = ''
-                while confirm_hide_file.strip().upper() not in ['Y', 'N']:
+
                     error_count = len(gcode.errors)
                     info_count = len(gcode.info)
                     warning_count = len(gcode.warnings)
@@ -49,9 +49,11 @@ if __name__ == '__main__':
                         info = '\n'.join([info.message for info in gcode.info])
                         print_info(f"info:\n{info}")
 
-                    confirm_hide_file = input(f"Processing complete. Do you want to hide {file_name}? [Y/N]")  # noqa
-
-                if confirm_hide_file.strip().upper() == 'Y':
-                    hide_original_file(full_file_path)
+                if ARCHIVE_PROCESSED_FILE:
+                    confirm_hide_file = ''
+                    while confirm_hide_file.strip().upper() not in ['Y', 'N']:
+                        confirm_hide_file = input(f"Processing complete. Do you want to hide {file_name}? [Y/N]")  # noqa
+                    if confirm_hide_file.strip().upper() == 'Y':
+                        hide_original_file(full_file_path)
             else:
                 print_info(f"Skipping {file_name}")
