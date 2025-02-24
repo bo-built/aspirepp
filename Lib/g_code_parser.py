@@ -1,7 +1,20 @@
 import os
 from decimal import Decimal
 
-from settings import G0_RAPID_MAX_SPEED, PROCESSED_FILES_DIR
+from settings import (
+    G0_RAPID_MAX_SPEED,
+    G0_RAPID_MIN_HEIGHT,
+    PROCESSED_FILES_DIR
+)
+
+
+class GCodeError(Exception):
+    def __init__(self, line, message):
+        self.message = message
+        self.line = line
+
+    def __str__(self):
+        return f"Fatal Error in line {self.line.line_number}: {self.message}"
 
 
 class GCodeLine(object):
@@ -15,7 +28,7 @@ class GCodeLine(object):
             'H': 'HEADER',
         }
 
-        self.line_number = line_number
+        self.line_number = line_number + 1
         self.original_text = text_line
         self.formatted_text = ''
         self.code_type = None
@@ -107,6 +120,7 @@ class GCodeXXL(object):
         self.verify_y_max_not_zero()
         self.process_lines()
         self.check_depth_of_cuts()
+        self.check_rapid_height()
 
     def write_new_files(self):
         self.copy_file_to_processed_files_dir('xxl')
@@ -150,9 +164,6 @@ class GCodeXXL(object):
             )
             self.file_data[0] = self.file_header
 
-    def verify_rapid_above_material(self):
-        pass
-
     def correct_rapid_speed(self):
         """
         Ensures that any G0 rapid move lines don't
@@ -183,6 +194,17 @@ class GCodeXXL(object):
             self.processed_code_lines.append(g_code_line)
             _line += 1
 
+    def check_rapid_height(self):
+        """
+        Ensures no Z coordinate in a rapid move is below G0_RAPID_MIN_HEIGHT
+        """
+        for line in self.processed_code_lines:
+            if line.code_type == 'G0' and line.Z:
+                if line.Z and Decimal(line.Z) >= 0:
+                    raise GCodeError(line, "Rapid Z Height not a negative value!!!")
+                elif line.Z and abs(Decimal(line.Z)) < G0_RAPID_MIN_HEIGHT:
+                    raise GCodeError(line, "Rapid Z Height below safety threshold!!!")
+
     def check_depth_of_cuts(self):
         """
         Ensures no Z coordinate is below material thickness (max_z)
@@ -190,7 +212,7 @@ class GCodeXXL(object):
         """
         for line in self.processed_code_lines:
             if line.Z and Decimal(line.Z) > self.z_warning_threshold:
-                print(f"WARNING!!! Z depth on line {line.line_number} ({line.Z}) is greater than {self.z_warning_threshold:.4f}!!!")  # noqa
+                raise GCodeError(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
 
     def copy_file_to_processed_files_dir(self, extension):
         """Copies a file and renames it with a new extension."""
