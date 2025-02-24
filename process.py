@@ -1,5 +1,4 @@
 import os
-import shutil
 
 from settings import SOURCE_DIR
 
@@ -12,7 +11,7 @@ if __name__ == '__main__':
     files_to_process = [i for i in files if i.endswith('.xxl')]
 
     if len(files_to_process) == 0:
-        print(f"No files to process. Make sure .xxl files are in {SOURCE_DIR} or change the source directory in settings.py")
+        print(f"No files to process. Make sure .xxl files are in {SOURCE_DIR} or change the source directory in settings.py")  # noqa
     else:
         for file_name in files_to_process:
             confirm = ''
@@ -29,7 +28,7 @@ if __name__ == '__main__':
                     gcode.write_new_files()
                 confirm_hide_file = ''
                 while confirm_hide_file.strip().upper() not in ['Y', 'N']:
-                    confirm_hide_file = input(f"Processing complete. Do you want to hide {file_name}? [Y/N]")
+                    confirm_hide_file = input(f"Processing complete. Do you want to hide {file_name}? [Y/N]")  # noqa
 
                 if confirm_hide_file.strip().upper() == 'Y':
                     hide_original_file(full_file_path)
