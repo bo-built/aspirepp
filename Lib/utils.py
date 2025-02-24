@@ -1,7 +1,21 @@
 import os
 import time
 
+from termcolor import colored
+
 from settings import ARCHIVE_DIR
+
+
+def print_error(text):
+    print(colored(text, "red"))
+
+
+def print_warning(text):
+    print(colored(text, "yellow"))
+
+
+def print_info(text):
+    print(colored(text, "blue"))
 
 
 def hide_original_file(source_file_path):

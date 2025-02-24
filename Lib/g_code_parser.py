@@ -151,6 +151,7 @@ class GCodeXXL(object):
         self.process_lines()
         self.check_depth_of_cuts()
         self.check_rapid_height()
+        self.correct_rapid_speed()
 
     def write_new_files(self):
         self.copy_file_to_processed_files_dir('xxl')
@@ -194,35 +195,26 @@ class GCodeXXL(object):
             )
             self.file_data[0] = self.file_header
 
+    def process_lines(self):
+        _line = 0
+        for line in self.file_data:
+            g_code_line = GCodeLine(line, _line)
+            self.processed_code_lines.append(g_code_line)
+            _line += 1
+
     def correct_rapid_speed(self):
         """
         Ensures that any G0 rapid move lines don't
         exceed the maximum setting.
         """
         _line = 0
-        for line in self.file_data:
-            if line.startswith('G0'):
-                bits = line.split(' ')
-                _bit = 0
-                for bit in bits:
-                    if bit.startswith('V'):
-                        velocity = float(
-                            bit.replace('V=', '').replace('V', '')
-                        )
-                        if velocity > (G0_RAPID_MAX_SPEED):
-                            velocity = f"V={G0_RAPID_MAX_SPEED:.0f}"
-                            self.warning.append(GCodeWarning(line, "corrected rapid speed"))
-                        bits[_bit] = velocity
-                    _bit += 1
-                line = ' '.join(bits)
-                self.file_data[_line] = line
-            _line += 1
-
-    def process_lines(self):
-        _line = 0
-        for line in self.file_data:
-            g_code_line = GCodeLine(line, _line)
-            self.processed_code_lines.append(g_code_line)
+        for line in self.processed_code_lines:
+            if line.code_type == 'G0' and line.V:
+                velocity = Decimal(line.V)
+                if velocity > (G0_RAPID_MAX_SPEED):
+                    velocity_text = f"V={G0_RAPID_MAX_SPEED:.0f}"
+                    line.formatted_text.replace(f"V={line.V}", velocity_text)
+                    self.warnings.append(GCodeWarning(line, "corrected rapid speed"))
             _line += 1
 
     def check_rapid_height(self):
