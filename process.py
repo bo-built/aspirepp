@@ -1,4 +1,5 @@
 import os
+import sys
 
 from settings import SOURCE_DIR
 
@@ -11,7 +12,7 @@ if __name__ == '__main__':
     files_to_process = [i for i in files if i.endswith('.xxl')]
 
     if len(files_to_process) == 0:
-        print(f"No files to process. Make sure .xxl files are in {SOURCE_DIR} or change the source directory in settings.py")  # noqa
+        print(f"No files to process. Make sure .xxl files are in {SOURCE_DIR} or change the source directory in settings.py", file=sys.stdout)  # noqa
     else:
         for file_name in files_to_process:
             confirm = ''
@@ -19,7 +20,7 @@ if __name__ == '__main__':
                 confirm = input(f"Process {file_name}? [Y/N]")
 
             if confirm.strip().upper() == 'Y':
-                print(f"Processing {file_name}")
+                print(f"Processing {file_name}", file=sys.stdout)
                 full_file_path = os.path.join(SOURCE_DIR, file_name)
                 with open(full_file_path, 'r') as file:
                     file_data = file.read().split('\n')
@@ -28,9 +29,26 @@ if __name__ == '__main__':
                     gcode.write_new_files()
                 confirm_hide_file = ''
                 while confirm_hide_file.strip().upper() not in ['Y', 'N']:
+                    error_count = len(gcode.errors)
+                    info_count = len(gcode.info)
+                    warning_count = len(gcode.warnings)
+                    print(
+                        f"Processing complete. Here's what happened:\n{error_count} errors\n{warning_count} warnings\n{info_count} info",  # noqa
+                        file=sys.stdout
+                    )
+                    if error_count:
+                        errors = '\n'.join([error.message for error in gcode.errors])
+                        print(f"errors:\n{errors}", file=sys.stderr)
+                    if warning_count:
+                        warnings = '\n'.join([warnings.message for warnings in gcode.warnings])
+                        print(f"warnings:\n{warnings}", file=sys.stderr)
+                    if info_count:
+                        info = '\n'.join([info.message for info in gcode.info])
+                        print(f"info:\n{info}", file=sys.stdout)
+
                     confirm_hide_file = input(f"Processing complete. Do you want to hide {file_name}? [Y/N]")  # noqa
 
                 if confirm_hide_file.strip().upper() == 'Y':
                     hide_original_file(full_file_path)
             else:
-                print(f"Skipping {file_name}")
+                print(f"Skipping {file_name}", file=sys.stdout)

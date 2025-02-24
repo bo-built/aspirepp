@@ -8,13 +8,40 @@ from settings import (
 )
 
 
-class GCodeError(Exception):
-    def __init__(self, line, message):
+class ProcessingException(Exception):
+    def __init__(self, message):
         self.message = message
-        self.line = line
 
     def __str__(self):
-        return f"Fatal Error in line {self.line.line_number}: {self.message}"
+        return f"Fatal Processing Error: {self.message}"
+
+
+class GCodeMessage(object):
+    def __init__(self, line, message):
+        self.line = line
+        self._message = message
+        if self.line:
+            self.message = f"{self.level} on line #{self.line.line_number}: {self._message}"
+        else:
+            self.message = f"{self.level}: {self._message}"
+
+
+class GCodeInfo(GCodeMessage):
+    def __init__(self, line, message):
+        self.level = "INFO"
+        super(GCodeInfo, self).__init__(line, message)
+
+
+class GCodeWarning(GCodeMessage):
+    def __init__(self, line, message):
+        self.level = "WARNING"
+        super(GCodeWarning, self).__init__(line, message)
+
+
+class GCodeError(GCodeMessage):
+    def __init__(self, line, message):
+        self.level = "ERROR"
+        super(GCodeError, self).__init__(line, message)
 
 
 class GCodeLine(object):
@@ -113,6 +140,9 @@ class GCodeXXL(object):
             self.file_data = file.read().split('\n')
             self.file_header = self.file_data[0]
             self.processed_code_lines = []
+            self.warnings = []
+            self.errors = []
+            self.info = []
 
     def process(self):
         self.get_axis_max_values_from_file()
@@ -143,6 +173,9 @@ class GCodeXXL(object):
         Detects if value of Y MAX in the file is 0 and prompts for a value
         if it is 0.
         """
+        if self.y_max is None:
+            raise ProcessingException("Could not find Y value")
+
         input_y_string = ''
         if self.y_max <= 0:
             input_y_value = 0
@@ -155,9 +188,6 @@ class GCodeXXL(object):
                 except:  # noqa: TODO catch specific exception here
                     print("Enter a number!")
                     input_y_value = 0
-        if input_y_string == '':
-            print("Could not find Y value")
-        else:
             self.file_header = self.file_header.replace(
                 self.y_max_original_value,
                 input_y_string
@@ -181,6 +211,7 @@ class GCodeXXL(object):
                         )
                         if velocity > (G0_RAPID_MAX_SPEED):
                             velocity = f"V={G0_RAPID_MAX_SPEED:.0f}"
+                            self.warning.append(GCodeWarning(line, "corrected rapid speed"))
                         bits[_bit] = velocity
                     _bit += 1
                 line = ' '.join(bits)
@@ -201,9 +232,15 @@ class GCodeXXL(object):
         for line in self.processed_code_lines:
             if line.code_type == 'G0' and line.Z:
                 if line.Z and Decimal(line.Z) >= 0:
-                    raise GCodeError(line, "Rapid Z Height not a negative value!!!")
+                    self.errors.append(
+                        GCodeError(line, "Rapid Z Height not a negative value!!!")
+                    )
+                    # raise ProcessingException(line, "Rapid Z Height not a negative value!!!")
                 elif line.Z and abs(Decimal(line.Z)) < G0_RAPID_MIN_HEIGHT:
-                    raise GCodeError(line, "Rapid Z Height below safety threshold!!!")
+                    self.errors.append(
+                        GCodeError(line, "Rapid Z Height below safety threshold!!!")
+                    )
+                    # raise ProcessingException(line, "Rapid Z Height below safety threshold!!!")
 
     def check_depth_of_cuts(self):
         """
@@ -212,7 +249,10 @@ class GCodeXXL(object):
         """
         for line in self.processed_code_lines:
             if line.Z and Decimal(line.Z) > self.z_warning_threshold:
-                raise GCodeError(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
+                self.errors.append(
+                    GCodeError(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
+                )
+                # raise ProcessingException(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
 
     def copy_file_to_processed_files_dir(self, extension):
         """Copies a file and renames it with a new extension."""
@@ -225,5 +265,7 @@ class GCodeXXL(object):
         out_file = open(out_file_path, "w+")
         out_file.write('\n'.join(self.file_data))
         out_file.close()
-        
-        print(f"File processed and copied to: {out_file_path}")
+        self.info.append(
+            GCodeInfo(None, f"File processed and copied to: {out_file_path}")
+        )
+        # print(f"File processed and copied to: {out_file_path}")
