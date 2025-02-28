@@ -1,12 +1,13 @@
-import os
 from decimal import Decimal
+from pathlib import Path
 
 from settings import (
     G0_RAPID_MAX_SPEED,
     G0_RAPID_MIN_HEIGHT,
-    PROCESSED_FILES_DIR,
     REMOVE_BORING_HEAD_RAPIDS,
 )
+
+from Lib.utils import get_file_basename
 
 
 class ProcessingException(Exception):
@@ -212,11 +213,11 @@ class GCodeXXL(object):
         self.update_code_for_boring_head()
 
     def compile_formatted_lines(self):
-        self.compiled_lines = '\n'.join([l.formatted_text for l in self.processed_code_lines])
+        self.compiled_lines = '\n'.join([line.formatted_text for line in self.processed_code_lines])
 
-    def write_new_files(self):
-        self.copy_file_to_processed_files_dir('xxl')
-        self.copy_file_to_processed_files_dir('pgm')
+    def write_new_files(self, target_dir):
+        self.copy_file_to_processed_files_dir('xxl', target_dir)
+        self.copy_file_to_processed_files_dir('pgm', target_dir)
 
     def get_axis_max_values_from_file(self):
         """ Parse the file header and find the X,Y,Z Max values """
@@ -320,7 +321,7 @@ class GCodeXXL(object):
                     current_spindle_speed = line.S
                     print(f"Handling boring rapid - {line.original_text}")
                     current_bore_tool = line.Tool
-                    # self.warnings.append(GCodeWarning(line, "This is a boring head operation, rapid not needed?"))
+                    # self.warnings.append(GCodeWarning(line, "This is a boring head operation, rapid not needed?"))  # noqa
                     if REMOVE_BORING_HEAD_RAPIDS:
                         del_lines.append(line)
                     else:
@@ -330,14 +331,10 @@ class GCodeXXL(object):
         for deleteme in del_lines:
             self.processed_code_lines.remove(deleteme)
 
-    def copy_file_to_processed_files_dir(self, extension):
+    def copy_file_to_processed_files_dir(self, extension, target_dir):
         """Copies a file and renames it with a new extension."""
-
-        file_name_without_extension = os.path.splitext(
-            os.path.basename(self.source_file_path)
-        )[0]
-        out_file_name = f"{file_name_without_extension}.{extension}"
-        out_file_path = os.path.join(PROCESSED_FILES_DIR, out_file_name)
+        basename = get_file_basename(self.source_file_path)
+        out_file_path = Path(f"{target_dir}\\{basename}.{extension}")
         out_file = open(out_file_path, "w+")
         out_file.write(self.compiled_lines)
         out_file.close()

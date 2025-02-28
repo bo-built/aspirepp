@@ -1,59 +1,57 @@
-import os
-
-from settings import SOURCE_DIR, ARCHIVE_PROCESSED_FILE
+import tkinter as tk
+from tkinter import filedialog
+import sys
 
 from Lib.utils import (
-    hide_original_file,
     print_error,
     print_info,
     print_warning,
+    file_extension_is_xxl,
+    upsert_processed_files_dir,
 )
 from Lib.g_code_parser import GCodeXXL
 
 
-if __name__ == '__main__':
-    files = os.listdir(SOURCE_DIR)
-    files_to_process = [i for i in files if i.endswith('.xxl')]
+def open_file_dialog():
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    file_path = filedialog.askopenfilename()
+    return file_path
 
-    if len(files_to_process) == 0:
-        print_warning(f"No files to process. Make sure .xxl files are in {SOURCE_DIR} or change the source directory in settings.py")  # noqa
+
+if __name__ == "__main__":
+    selected_file = open_file_dialog()
+    if selected_file:
+        # print(selected_file)
+        # sys.exit(0)
+        if not file_extension_is_xxl(selected_file):
+            ''' Bail if it isn't an XXL file '''
+            print_error(f"{selected_file} is not an XXL file. Try again.")
+            sys.exit(1)
+        print_info(f"Processing {selected_file}")
+        outfile_dir = upsert_processed_files_dir(selected_file)
+        with open(selected_file, 'r') as file:
+            file_data = file.read().split('\n')
+            gcode = GCodeXXL(selected_file)
+            gcode.process()
+            gcode.compile_formatted_lines()
+            gcode.write_new_files(outfile_dir)
+
+            error_count = len(gcode.errors)
+            info_count = len(gcode.info)
+            warning_count = len(gcode.warnings)
+            print_info(
+                f"Processing complete. Here's what happened:\n{error_count} errors\n{warning_count} warnings\n{info_count} info",  # noqa
+            )
+            if error_count:
+                errors = '\n'.join([error.message for error in gcode.errors])
+                print_error(f"errors:\n{errors}")
+            if warning_count:
+                warnings = '\n'.join([warnings.message for warnings in gcode.warnings])
+                print_warning(f"warnings:\n{warnings}")
+            if info_count:
+                info = '\n'.join([info.message for info in gcode.info])
+                print_info(f"info:\n{info}")
+
     else:
-        for file_name in files_to_process:
-            confirm = ''
-            while confirm.strip().upper() not in ['Y', 'N']:
-                confirm = input(f"Process {file_name}? [Y/N]")
-
-            if confirm.strip().upper() == 'Y':
-                print_info(f"Processing {file_name}")
-                full_file_path = os.path.join(SOURCE_DIR, file_name)
-                with open(full_file_path, 'r') as file:
-                    file_data = file.read().split('\n')
-                    gcode = GCodeXXL(full_file_path)
-                    gcode.process()
-                    gcode.compile_formatted_lines()
-                    gcode.write_new_files()
-
-                    error_count = len(gcode.errors)
-                    info_count = len(gcode.info)
-                    warning_count = len(gcode.warnings)
-                    print_info(
-                        f"Processing complete. Here's what happened:\n{error_count} errors\n{warning_count} warnings\n{info_count} info",  # noqa
-                    )
-                    if error_count:
-                        errors = '\n'.join([error.message for error in gcode.errors])
-                        print_error(f"errors:\n{errors}")
-                    if warning_count:
-                        warnings = '\n'.join([warnings.message for warnings in gcode.warnings])
-                        print_warning(f"warnings:\n{warnings}")
-                    if info_count:
-                        info = '\n'.join([info.message for info in gcode.info])
-                        print_info(f"info:\n{info}")
-
-                if ARCHIVE_PROCESSED_FILE:
-                    confirm_hide_file = ''
-                    while confirm_hide_file.strip().upper() not in ['Y', 'N']:
-                        confirm_hide_file = input(f"Processing complete. Do you want to hide {file_name}? [Y/N]")  # noqa
-                    if confirm_hide_file.strip().upper() == 'Y':
-                        hide_original_file(full_file_path)
-            else:
-                print_info(f"Skipping {file_name}")
+        sys.exit(1)
