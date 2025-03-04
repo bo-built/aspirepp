@@ -8,42 +8,15 @@ from settings import (
 )
 
 from Lib.utils import get_file_basename
+from Lib.g_code_parser_errors import GCodeMessage
 
 
 class ProcessingException(Exception):
-    def __init__(self, message):
+    def __init__(self, message, code=000):
         self.message = message
 
     def __str__(self):
         return f"Fatal Processing Error: {self.message}"
-
-
-class GCodeMessage(object):
-    def __init__(self, line, message):
-        self.line = line
-        self._message = message
-        if self.line:
-            self.message = f"{self.level} on line #{self.line.line_number}: {self._message}"
-        else:
-            self.message = f"{self.level}: {self._message}"
-
-
-class GCodeInfo(GCodeMessage):
-    def __init__(self, line, message):
-        self.level = "INFO"
-        super(GCodeInfo, self).__init__(line, message)
-
-
-class GCodeWarning(GCodeMessage):
-    def __init__(self, line, message):
-        self.level = "WARNING"
-        super(GCodeWarning, self).__init__(line, message)
-
-
-class GCodeError(GCodeMessage):
-    def __init__(self, line, message):
-        self.level = "ERROR"
-        super(GCodeError, self).__init__(line, message)
 
 
 class GCodeLine(object):
@@ -170,7 +143,6 @@ class GCodeLine(object):
             self.format_variables_into_print_line()
 
     def change_to_boring_operation(self, current_bore_tool, current_spindle_speed):
-        old_code = self.code_type
         self.code_type = 'B'
         if not self.T:
             self.T = current_bore_tool
@@ -198,9 +170,26 @@ class GCodeXXL(object):
             self.file_header = self.file_data[0]
             self.processed_code_lines = []
             self.compiled_lines = ''
-            self.warnings = []
-            self.errors = []
-            self.info = []
+            self.warnings = {}
+            self.errors = {}
+            self.info = {}
+            self.out_files = []
+            self.log_file = ''
+
+    def add_error(self, code, line):
+        code_errors = self.errors.get(code, [])
+        code_errors.append(GCodeMessage(line=line, code=code))
+        self.errors[code] = code_errors
+
+    def add_warning(self, code, line):
+        code_warnings = self.warnings.get(code, [])
+        code_warnings.append(GCodeMessage(line=line, code=code))
+        self.warnings[code] = code_warnings
+
+    def add_info(self, code, line):
+        code_infos = self.info.get(code, [])
+        code_infos.append(GCodeMessage(line=line, code=code))
+        self.info[code] = code_infos
 
     def process(self):
         self.get_axis_max_values_from_file()
@@ -275,7 +264,7 @@ class GCodeXXL(object):
                 velocity = Decimal(line.V)
                 if velocity > (G0_RAPID_MAX_SPEED):
                     line.V = G0_RAPID_MAX_SPEED
-                    self.warnings.append(GCodeWarning(line, "corrected rapid speed"))
+                    self.add_warning(line=line, code=301)
             _line += 1
 
     def check_rapid_height(self):
@@ -285,15 +274,9 @@ class GCodeXXL(object):
         for line in self.processed_code_lines:
             if line.code_type == 'G0' and line.Z:
                 if line.Z and Decimal(line.Z) >= 0:
-                    self.errors.append(
-                        GCodeError(line, "Rapid Z Height not a negative value!!!")
-                    )
-                    # raise ProcessingException(line, "Rapid Z Height not a negative value!!!")
+                    self.add_error(line=line, code=101)
                 elif line.Z and abs(Decimal(line.Z)) < G0_RAPID_MIN_HEIGHT:
-                    self.errors.append(
-                        GCodeError(line, "Rapid Z Height below safety threshold!!!")
-                    )
-                    # raise ProcessingException(line, "Rapid Z Height below safety threshold!!!")
+                    self.add_warning(line=line, code=202)
 
     def check_depth_of_cuts(self):
         """
@@ -302,9 +285,7 @@ class GCodeXXL(object):
         """
         for line in self.processed_code_lines:
             if line.Z and Decimal(line.Z) > self.z_warning_threshold:
-                self.errors.append(
-                    GCodeError(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
-                )
+                self.add_error(line=line, code=102)
                 # raise ProcessingException(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
 
     def update_code_for_boring_head(self):
@@ -315,11 +296,11 @@ class GCodeXXL(object):
         for line in self.processed_code_lines:
             if line.Tool and line.Tool != current_tool:
                 current_tool = line.Tool
-                print(f"setting current tool to {line.Tool}; {line.formatted_text}")
+                # print(f"setting current tool to {line.Tool}; {line.formatted_text}")
             if current_tool and current_tool < 100:
                 if line.code_type == 'G0':
                     current_spindle_speed = line.S
-                    print(f"Handling boring rapid - {line.original_text}")
+                    # print(f"Handling boring rapid - {line.original_text}")
                     current_bore_tool = line.Tool
                     # self.warnings.append(GCodeWarning(line, "This is a boring head operation, rapid not needed?"))  # noqa
                     if REMOVE_BORING_HEAD_RAPIDS:
@@ -338,7 +319,28 @@ class GCodeXXL(object):
         out_file = open(out_file_path, "w+")
         out_file.write(self.compiled_lines)
         out_file.close()
-        self.info.append(
-            GCodeInfo(None, f"File processed and copied to: {out_file_path}")
-        )
+        self.out_files.append(out_file_path)
+
+    def write_log_file(self, target_dir):
+        import pdb
+        pdb.set_trace()
+        log_lines = []
+        msg_types = ['errors', 'warnings', 'info']
+        for mtype in msg_types:
+            self_prop = getattr(self, mtype)
+            for code, instances in self_prop.items():
+                for inst in instances:
+                    message = f"ERROR {code}: \"{inst.message}\" on line #{inst.line.line_number}"
+                    log_lines.append(message)
+
+        basename = get_file_basename(self.source_file_path)
+        out_file_path = Path(f"{target_dir}\\{basename}.log.txt")
+        out_file = open(out_file_path, "w+")
+        out_file.write("\n".join(log_lines))
+        out_file.close()
+        self.out_files.append(out_file_path)
+
+        # self.info.append(
+        #     GCodeInfo(None, f"File processed and copied to: {out_file_path}")
+        # )
         # print(f"File processed and copied to: {out_file_path}")

@@ -10,6 +10,7 @@ from Lib.utils import (
     upsert_processed_files_dir,
 )
 from Lib.g_code_parser import GCodeXXL
+from Lib.g_code_parser_errors import CODES
 
 
 def open_file_dialog():
@@ -36,22 +37,24 @@ if __name__ == "__main__":
             gcode.process()
             gcode.compile_formatted_lines()
             gcode.write_new_files(outfile_dir)
+            gcode.write_log_file(outfile_dir)
 
-            error_count = len(gcode.errors)
-            info_count = len(gcode.info)
-            warning_count = len(gcode.warnings)
-            print_info(
-                f"Processing complete. Here's what happened:\n{error_count} errors\n{warning_count} warnings\n{info_count} info",  # noqa
-            )
-            if error_count:
-                errors = '\n'.join([error.message for error in gcode.errors])
-                print_error(f"errors:\n{errors}")
-            if warning_count:
-                warnings = '\n'.join([warnings.message for warnings in gcode.warnings])
-                print_warning(f"warnings:\n{warnings}")
-            if info_count:
-                info = '\n'.join([info.message for info in gcode.info])
-                print_info(f"info:\n{info}")
-
+            print_info("Processing complete. Here's what happened:")
+            if gcode.errors:
+                for code, instances in gcode.errors.items():
+                    message = CODES[code]['message']
+                    print_error(f"Error  {code} \"{message}\" On {len(instances)} lines")
+            if gcode.warnings:
+                for code, instances in gcode.warnings.items():
+                    message = CODES[code]['message']
+                    print_warning(f"Warning {code} \"{message}\" On {len(instances)} lines")
+            if gcode.info:
+                for code, instances in gcode.info.items():
+                    line_numbers = [inst.line.line_number for inst in instances]
+                    message = CODES[code]['message']
+                    print_info(f"Info {code} \"{message}\" On {len(instances)} lines")
+            print_info("Output can be found at:")
+            for file in gcode.out_files:
+                print_info(file)
     else:
         sys.exit(1)
