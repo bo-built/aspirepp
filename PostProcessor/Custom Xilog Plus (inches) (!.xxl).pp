@@ -73,6 +73,8 @@ begin HEADER
 "; FILE NOTES: [FILE_NOTES]"
 "; ********** BEGIN PROGRAM **********"
 "F=1"
+"XBLOWER E=0# T=[T]"
+"C=0"
 +---------------------------------------------------
 +  Commands output at toolchange
 +---------------------------------------------------

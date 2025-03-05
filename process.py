@@ -10,7 +10,7 @@ from Lib.utils import (
     upsert_processed_files_dir,
 )
 from Lib.g_code_parser import GCodeXXL
-from Lib.g_code_parser_errors import CODES
+from Lib.g_code_parser_messenger import CODES
 
 
 def open_file_dialog():
@@ -53,6 +53,8 @@ if __name__ == "__main__":
                     line_numbers = [inst.line.line_number for inst in instances]
                     message = CODES[code]['message']
                     print_info(f"Info {code} \"{message}\" On {len(instances)} lines")
+            for direct_output in gcode.direct_output:
+                print_info(direct_output.message)
             print_info("Output can be found at:")
             for file in gcode.out_files:
                 print_info(file)

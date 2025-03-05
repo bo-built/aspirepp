@@ -8,7 +8,7 @@ from settings import (
 )
 
 from Lib.utils import get_file_basename
-from Lib.g_code_parser_errors import GCodeMessage
+from Lib.g_code_parser_messenger import GCodeMessage, GCodeCustomMessage
 
 G_CODE_TYPE_MAP = {
     'G0': 'RAPID MOVE',
@@ -204,23 +204,27 @@ class GCodeXXL(object):
             self.warnings = {}
             self.errors = {}
             self.info = {}
+            self.direct_output = []
             self.out_files = []
             self.log_file = ''
 
     def add_error(self, code, line):
         code_errors = self.errors.get(code, [])
-        code_errors.append(GCodeMessage(line=line, code=code))
+        code_errors.append(GCodeMessage(line_number=line.line_number, code=code))
         self.errors[code] = code_errors
 
     def add_warning(self, code, line):
         code_warnings = self.warnings.get(code, [])
-        code_warnings.append(GCodeMessage(line=line, code=code))
+        code_warnings.append(GCodeMessage(line_number=line.line_number, code=code))
         self.warnings[code] = code_warnings
 
     def add_info(self, code, line):
         code_infos = self.info.get(code, [])
-        code_infos.append(GCodeMessage(line=line, code=code))
+        code_infos.append(GCodeMessage(line_number=line.line_number, code=code))
         self.info[code] = code_infos
+
+    def add_direct_output(self, message):
+        self.direct_output.append(GCodeCustomMessage(message))
 
     def process(self):
         self.get_axis_max_values_from_file()
@@ -237,10 +241,6 @@ class GCodeXXL(object):
 
     def compile_formatted_lines(self):
         self.compiled_lines = '\n'.join([line.formatted_text for line in self.processed_code_lines])
-
-    def write_new_files(self, target_dir):
-        self.copy_file_to_processed_files_dir('xxl', target_dir)
-        self.copy_file_to_processed_files_dir('pgm', target_dir)
 
     def get_axis_max_values_from_file(self):
         """ Parse the file header and find the X,Y,Z Max values """
@@ -328,6 +328,8 @@ class GCodeXXL(object):
         current_bore_tool = None
         current_spindle_speed = None
         del_lines = []
+        line_count = 0
+        boring_map = []
         for line in self.processed_code_lines:
             if line.Tool and line.Tool != current_tool:
                 current_tool = line.Tool
@@ -344,6 +346,13 @@ class GCodeXXL(object):
                         line.formatted_text = f";*******BORING HEAD {line.formatted_text}************"
                 elif line.code_type.startswith('G'):
                     line.change_to_boring_operation(current_bore_tool, current_spindle_speed)
+                    line_count += 1
+                    if (line.X, line.Y) not in boring_map:
+                        boring_map.append((line.X, line.Y))
+
+        self.add_direct_output(f"Deleted illegal rapid from boring head operation on {len(del_lines)} lines.")
+        self.add_direct_output(f"Converted {len(boring_map)} lines to boring head operation code.")
+
         for deleteme in del_lines:
             self.processed_code_lines.remove(deleteme)
 
@@ -423,6 +432,10 @@ class GCodeXXL(object):
         out_file.close()
         self.out_files.append(out_file_path)
 
+    def write_new_files(self, target_dir):
+        self.copy_file_to_processed_files_dir('xxl', target_dir)
+        self.copy_file_to_processed_files_dir('pgm', target_dir)
+
     def write_log_file(self, target_dir):
         log_lines = []
         msg_types = ['errors', 'warnings', 'info']
@@ -430,7 +443,10 @@ class GCodeXXL(object):
             self_prop = getattr(self, mtype)
             for code, instances in self_prop.items():
                 for inst in instances:
-                    message = f"ERROR {code}: \"{inst.message}\" on line #{inst.line.line_number}"
+                    if inst.line_number:
+                        message = f"{inst.level} {code}: \"{inst.message}\" on line #{inst.line_number}"
+                    else:
+                        message = f"{inst.level} {code}: \"{inst.message}\""
                     log_lines.append(message)
 
         basename = get_file_basename(self.source_file_path)
