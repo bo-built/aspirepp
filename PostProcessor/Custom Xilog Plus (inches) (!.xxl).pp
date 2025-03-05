@@ -68,6 +68,10 @@ VAR SAFE_Z_HEIGHT = [SAFEZ|A|X|1.4|-1]
 begin HEADER
 
 "H DX[XMAX] DY[YMAX] DZ[ZLENGTH] -AD R99 *IN /DEF"
+"; CREATED AT [DATE] [TIME]"
+"; TOOLS [TOOLS_USED]"
+"; FILE NOTES: [FILE_NOTES]"
+"; ********** BEGIN PROGRAM **********"
 "F=1"
 +---------------------------------------------------
 +  Commands output at toolchange
@@ -76,19 +80,28 @@ begin HEADER
 begin TOOLCHANGE
 + "XBLOWER E=0# T=[T] ;TOOL CHANGE"
 + "C=0"
-+ "G0 [X] [Y] [Z] [T] [S]"
++ "G0 [X] [Y] [Z] [T] [S]; "
 +
 +---------------------------------------------------
 
+"; ********** TOOL CHANGE [TOOLNAME] # [T] ************"
 
 +---------------------------------------------------
 +  Commands output for rapid moves
 +---------------------------------------------------
 
 begin RAPID_MOVE
-"XBLOWER E=0# T=[T]"
-"C=0"
 "G0 [X] [Y] [Z] [T] [F] [S] ;[TOOLPATH_NAME] - Rapid"
+
++---------------------------------------------------
+
++ Commands output for the First Plunge Move, in a series of plunge moves.
+
++---------------------------------------------------
+
+begin FIRST_PLUNGE_MOVE
+
+"G1 [X] [Y] [Z] [FP] ;[TOOLPATH_NAME] - PLUNGE"
 
 
 +---------------------------------------------------
@@ -97,7 +110,7 @@ begin RAPID_MOVE
 
 begin PLUNGE_MOVE
 
-"G1 [X] [Y] [Z] [FP] ;[TOOLPATH_NAME] - PLUNGE"
+"G1 [X] [Y] [Z] [FP]"
 
 
 +---------------------------------------------------
