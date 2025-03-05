@@ -10,6 +10,17 @@ from settings import (
 from Lib.utils import get_file_basename
 from Lib.g_code_parser_errors import GCodeMessage
 
+G_CODE_TYPE_MAP = {
+    'G0': 'RAPID MOVE',
+    'G1': 'LINEAR FEED MOVE',
+    'G2': 'ARC MOVE (CLOCKWISE)',
+    'G3': 'ARC MOVE (COUNTER CLOCKWISE)',
+    'XBLOWER': 'XBLOWER',
+    'C': 'C Line',
+    'F': 'F Line',
+    'H': 'HEADER',
+    'B': 'BORING',
+}
 
 class ProcessingException(Exception):
     def __init__(self, message, code=000):
@@ -19,9 +30,27 @@ class ProcessingException(Exception):
         return f"Fatal Processing Error: {self.message}"
 
 
+class GCodeDummyLine(object):
+    def __init__(self, code_type, text_line, line_number):
+        self.line_number = line_number
+        self.original_text = text_line
+        self.formatted_text = text_line
+        self.code_type = code_type
+        self.command_type = G_CODE_TYPE_MAP[code_type]
+        self.comment = None
+        self.X = None
+        self.Y = None
+        self.Z = None
+        self.I = None  # noqa: ambiguous variable
+        self.J = None
+        self.S = None
+        self.V = None
+        self.T = None
+        self.Tool = None
+
 class GCodeLine(object):
     def __init__(self, text_line, line_number):
-        self._CODE_MAP = {
+        G_CODE_TYPE_MAP = {
             'G0': 'RAPID MOVE',
             'G1': 'LINEAR FEED MOVE',
             'G2': 'ARC MOVE (CLOCKWISE)',
@@ -53,16 +82,16 @@ class GCodeLine(object):
         self.code_type = self.code_data[0]
 
         self.known_vars = ['X', 'Y', 'Z', 'I', 'J', 'V', 'T', 'S']
-        if self.code_data[0] == 'H' or not self.code_data[0] in self._CODE_MAP:
+        if self.code_data[0] == 'H' or not self.code_data[0] in G_CODE_TYPE_MAP:
             """ This is the header line so don't change it
             """
             self.formatted_text = self.original_text
         elif self.code_data[0].startswith('C'):
             self.code_type = 'C'
-            self.command_type = self._CODE_MAP['C']
+            self.command_type = G_CODE_TYPE_MAP['C']
         elif self.code_data[0].startswith('F'):
             self.code_type = 'F'
-            self.command_type = self._CODE_MAP['F']
+            self.command_type = G_CODE_TYPE_MAP['F']
         elif self.code_data[0] == 'XBLOWER':
             """ This is an XBLOWER command, make sure it looks like
                 XBLOWER E=0# T=105
@@ -89,7 +118,7 @@ class GCodeLine(object):
             """ This should be a normal G code command, make sure it looks like
                 G2 X=##.#### Y=##.#### Z=##.#### I=##.#### J=##.#### ; COMMENT
             """
-            self.command_type = self._CODE_MAP[self.code_type]
+            self.command_type = G_CODE_TYPE_MAP[self.code_type]
             if ';' in self.original_text:
                 line_parts = self.original_text.split(';')
                 self.comment = line_parts[1]
@@ -149,7 +178,7 @@ class GCodeLine(object):
             self.Tool = current_bore_tool
         if not self.S:
             self.S = current_spindle_speed
-        self.command_type = self._CODE_MAP['B']
+        self.command_type = G_CODE_TYPE_MAP['B']
         self.format_variables_into_print_line()
 
 
@@ -199,7 +228,8 @@ class GCodeXXL(object):
         self.check_depth_of_cuts()
         self.check_rapid_height()
         self.correct_rapid_speed()
-        self.update_code_for_boring_head()
+        self.add_x_blower()
+        # self.update_code_for_boring_head()
 
     def compile_formatted_lines(self):
         self.compiled_lines = '\n'.join([line.formatted_text for line in self.processed_code_lines])
@@ -312,6 +342,27 @@ class GCodeXXL(object):
         for deleteme in del_lines:
             self.processed_code_lines.remove(deleteme)
 
+    def add_x_blower(self):
+        _index = 0
+        current_code_type = None
+        insert_points = []
+        insert_lines = []
+        for line in self.processed_code_lines:
+            if line.code_type != current_code_type and line.code_type == 'G0':
+                x_dummy_line = GCodeDummyLine('XBLOWER', f'XBLOWER E=0# T={line.T}', _index)
+                c_dummy_line = GCodeDummyLine('C', 'C=0', _index)
+                insert_lines.append((x_dummy_line, c_dummy_line))
+                insert_points.append(_index)
+            current_code_type = line.code_type
+            _index += 1
+        insert_points.reverse()
+        insert_lines.reverse()
+        ip = 0
+        for point in insert_points:
+            self.processed_code_lines.insert(point, insert_lines[ip][0])
+            self.processed_code_lines.insert(point + 1, insert_lines[ip][1])
+            ip += 1
+
     def copy_file_to_processed_files_dir(self, extension, target_dir):
         """Copies a file and renames it with a new extension."""
         basename = get_file_basename(self.source_file_path)
@@ -322,8 +373,6 @@ class GCodeXXL(object):
         self.out_files.append(out_file_path)
 
     def write_log_file(self, target_dir):
-        import pdb
-        pdb.set_trace()
         log_lines = []
         msg_types = ['errors', 'warnings', 'info']
         for mtype in msg_types:
