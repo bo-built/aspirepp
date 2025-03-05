@@ -231,7 +231,7 @@ class GCodeXXL(object):
         self.check_rapid_height()
         self.correct_rapid_speed()
         self.update_code_for_boring_head()
-        self.format_boring_lines()
+        # self.format_boring_lines()
         self.add_x_blower()
         # self.update_code_for_boring_head()
 
