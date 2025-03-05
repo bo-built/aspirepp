@@ -230,9 +230,9 @@ class GCodeXXL(object):
         self.check_depth_of_cuts()
         self.check_rapid_height()
         self.correct_rapid_speed()
-        self.add_x_blower()
         self.update_code_for_boring_head()
         self.format_boring_lines()
+        self.add_x_blower()
         # self.update_code_for_boring_head()
 
     def compile_formatted_lines(self):
@@ -323,6 +323,7 @@ class GCodeXXL(object):
                 # raise ProcessingException(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
 
     def update_code_for_boring_head(self):
+        """ Turns operations which use the boring into B coded lines and removes them if they are rapids """
         current_tool = None
         current_bore_tool = None
         current_spindle_speed = None
@@ -346,40 +347,53 @@ class GCodeXXL(object):
         for deleteme in del_lines:
             self.processed_code_lines.remove(deleteme)
 
-    def format_boring_lines(self):
-        boring_processes = []
-        boring_chunks = []
-        current_x = 0
-        current_y = 0
-        current_chunk = []
-        for line in self.processed_code_lines:
-            if line.code_type == 'B':
-                if line.X != current_x or line.Y != current_y:
-                    if len(current_chunk) > 0:
-                        boring_chunks.append(current_chunk)
-                    current_chunk = []
-                    current_chunk.append(line)
-                    current_x = line.X
-                    current_y = line.Y
-                else:
-                    current_chunk.append(line)
-        if len(current_chunk) > 0:
-            boring_chunks.append(current_chunk)
+    # def format_boring_lines(self):
+    #     """ Sets up boring operations based on groups of B operations which have identical (X,Y) Values
+    #         A boring head operation should be like:
+    #         first line:
+    #         B X=14.1095 Y=10.9575 Z=.5 V=2540 S=4000 G=2 T=4 D=0.5;Toolpath 1196
+    #         where Z is the bottom of the hole
+    #         Subsequent lines are additional (X,Y) locations, like
 
-        for chunk in boring_chunks:
-            boring_process = {
-                'X': chunk[0].X,
-                'Y': chunk[0].Y,
-                'Z': chunk[-1].Z,
-                'T': chunk[0].T,
-                'S': chunk[0].S,
-                'lines': [line.line_number for line in chunk],
-            }
-            boring_processes.append(boring_process)
-        import pdb
-        pdb.set_trace()
+    #         B X=13.5844 Y=11.0915 S=4000 G=2 T=4 D=0.5
+    #         B X=10.8918 Y=11.4838 S=4000 G=2 T=4 D=0.5
+    #         B X=7.6015 Y=11.61 S=4000 G=2 T=4 D=0.5
+    #     """
+    #     boring_processes = []
+    #     boring_chunks = []
+    #     current_x = 0
+    #     current_y = 0
+    #     current_chunk = []
+    #     for line in self.processed_code_lines:
+    #         if line.code_type == 'B':
+    #             if line.X != current_x or line.Y != current_y:
+    #                 if len(current_chunk) > 0:
+    #                     boring_chunks.append(current_chunk)
+    #                 current_chunk = []
+    #                 current_chunk.append(line)
+    #                 current_x = line.X
+    #                 current_y = line.Y
+    #             else:
+    #                 current_chunk.append(line)
+    #     if len(current_chunk) > 0:
+    #         boring_chunks.append(current_chunk)
+
+    #     for chunk in boring_chunks:
+    #         boring_process = {
+    #             'X': chunk[0].X,
+    #             'Y': chunk[0].Y,
+    #             'Z': chunk[-1].Z,
+    #             'T': chunk[0].T,
+    #             'S': chunk[0].S,
+    #             'lines': [line.line_number for line in chunk],
+    #         }
+    #         boring_processes.append(boring_process)
+    #         boring_processes.reverse()
+
+    #         for bp in boring_processes:
 
     def add_x_blower(self):
+        """ Inserts an XBLOWER and C line ahead of any new G0 operation """
         _index = 0
         current_code_type = None
         insert_points = []
