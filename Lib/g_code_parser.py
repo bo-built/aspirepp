@@ -106,6 +106,8 @@ class GCodeLine(object):
                         setattr(self, var_name, bit.replace(f"{var_name}=", ''))
                     self.code_data[_bit] = bit
                 _bit += 1
+            if self.code_type.startswith('G') and self.code_type != 'G0':
+                self.Y = self.Y.replace('-','')
 
         if self.T and self.T.startswith("T"):
             self.T = self.T.replace("T", "")
@@ -200,6 +202,7 @@ class GCodeXXL(object):
         self.check_rapid_height()
         self.correct_rapid_speed()
         self.update_code_for_boring_head()
+        self.format_boring_lines()
 
     def compile_formatted_lines(self):
         self.compiled_lines = '\n'.join([line.formatted_text for line in self.processed_code_lines])
@@ -312,6 +315,39 @@ class GCodeXXL(object):
         for deleteme in del_lines:
             self.processed_code_lines.remove(deleteme)
 
+    def format_boring_lines(self):
+        boring_processes = []
+        boring_chunks = []
+        current_x = 0
+        current_y = 0
+        current_chunk = []
+        for line in self.processed_code_lines:
+            if line.code_type == 'B':
+                if line.X != current_x or line.Y != current_y:
+                    if len(current_chunk) > 0:
+                        boring_chunks.append(current_chunk)
+                    current_chunk = []
+                    current_chunk.append(line)
+                    current_x = line.X
+                    current_y = line.Y
+                else:
+                    current_chunk.append(line)
+        if len(current_chunk) > 0:
+            boring_chunks.append(current_chunk)
+
+        for chunk in boring_chunks:
+            boring_process = {
+                'X': chunk[0].X,
+                'Y': chunk[0].Y,
+                'Z': chunk[-1].Z,
+                'T': chunk[0].T,
+                'S': chunk[0].S,
+                'lines': [line.line_number for line in chunk],
+            }
+            boring_processes.append(boring_process)
+        import pdb
+        pdb.set_trace()
+
     def copy_file_to_processed_files_dir(self, extension, target_dir):
         """Copies a file and renames it with a new extension."""
         basename = get_file_basename(self.source_file_path)
@@ -322,8 +358,6 @@ class GCodeXXL(object):
         self.out_files.append(out_file_path)
 
     def write_log_file(self, target_dir):
-        import pdb
-        pdb.set_trace()
         log_lines = []
         msg_types = ['errors', 'warnings', 'info']
         for mtype in msg_types:
