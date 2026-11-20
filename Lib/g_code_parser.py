@@ -10,6 +10,8 @@ from settings import (
 from Lib.utils import get_file_basename
 from Lib.g_code_parser_messenger import GCodeMessage, GCodeCustomMessage
 
+
+""" Map of default G Code line prefixes and their corresponding command type. """
 G_CODE_TYPE_MAP = {
     'G0': 'RAPID MOVE',
     'G1': 'LINEAR FEED MOVE',
@@ -22,7 +24,11 @@ G_CODE_TYPE_MAP = {
     'B': 'BORING',
 }
 
+
 class ProcessingException(Exception):
+    """ Raised when a fatal error occurs during processing of the G code file,
+        Such as a missing origin coordinate.
+    """
     def __init__(self, message, code=000):
         self.message = message
 
@@ -31,6 +37,10 @@ class ProcessingException(Exception):
 
 
 class GCodeDummyLine(object):
+    """ This class represents a dummy line of G code that is inserted into the
+        processed code lines list.  It is used to insert lines that are not part
+        of the original G code file, but are needed for processing.
+    """
     def __init__(self, code_type, text_line, line_number):
         self.line_number = line_number
         self.original_text = text_line
@@ -48,19 +58,12 @@ class GCodeDummyLine(object):
         self.T = None
         self.Tool = None
 
+
 class GCodeLine(object):
+    """ This class represents a single line of G code and is responsible for
+        parsing the line into its components.  It also formats the line for output.
+    """
     def __init__(self, text_line, line_number):
-        G_CODE_TYPE_MAP = {
-            'G0': 'RAPID MOVE',
-            'G1': 'LINEAR FEED MOVE',
-            'G2': 'ARC MOVE (CLOCKWISE)',
-            'G3': 'ARC MOVE (COUNTER CLOCKWISE)',
-            'XBLOWER': 'XBLOWER',
-            'C': 'C Line',
-            'F': 'F Line',
-            'H': 'HEADER',
-            'B': 'BORING',
-        }
 
         self.line_number = line_number + 1
         self.original_text = text_line
@@ -136,7 +139,7 @@ class GCodeLine(object):
                     self.code_data[_bit] = bit
                 _bit += 1
             if self.code_type.startswith('G') and self.code_type != 'G0':
-                self.Y = self.Y.replace('-','')
+                self.Y = self.Y.replace('-', '')
 
         if self.T and self.T.startswith("T"):
             self.T = self.T.replace("T", "")
@@ -185,7 +188,14 @@ class GCodeLine(object):
 
 
 class GCodeXXL(object):
+    """ This class represents a G Code file in XXL format.
+        Each line is parsed and formatted for the SCM Machine as a GCodeLine object.
+    """
+
     def __init__(self, source_file_path, z_max_tolerance=None):
+        """ Open the source file and initiate the GCodeXXL object with properties
+            for formatting helper functions.
+        """
         self.source_file_path = source_file_path
         with open(source_file_path, 'r') as file:
             self.x_max = Decimal(0)
@@ -208,25 +218,12 @@ class GCodeXXL(object):
             self.out_files = []
             self.log_file = ''
 
-    def add_error(self, code, line):
-        code_errors = self.errors.get(code, [])
-        code_errors.append(GCodeMessage(line_number=line.line_number, code=code))
-        self.errors[code] = code_errors
-
-    def add_warning(self, code, line):
-        code_warnings = self.warnings.get(code, [])
-        code_warnings.append(GCodeMessage(line_number=line.line_number, code=code))
-        self.warnings[code] = code_warnings
-
-    def add_info(self, code, line):
-        code_infos = self.info.get(code, [])
-        code_infos.append(GCodeMessage(line_number=line.line_number, code=code))
-        self.info[code] = code_infos
-
-    def add_direct_output(self, message):
-        self.direct_output.append(GCodeCustomMessage(message))
-
     def process(self):
+        """ This is the main processing function. Once the file has been
+            loaded by __init__, this function will call all the necessary
+            helper functions to format the file contents into G Code that is
+            compatible with the SCM CNC machine.
+        """
         self.get_axis_max_values_from_file()
         self.z_warning_threshold = self.z_max_tolerance + self.z_max
         self.verify_y_max_not_zero()
@@ -235,11 +232,34 @@ class GCodeXXL(object):
         self.check_rapid_height()
         self.correct_rapid_speed()
         self.update_code_for_boring_head()
-        # self.format_boring_lines()
         self.add_x_blower()
-        # self.update_code_for_boring_head()
+
+    def add_error(self, code, line):
+        """ Adds an error message to the errors dictionary. """
+        code_errors = self.errors.get(code, [])
+        code_errors.append(GCodeMessage(line_number=line.line_number, code=code))
+        self.errors[code] = code_errors
+
+    def add_warning(self, code, line):
+        """ Adds a warning message to the warnings dictionary. """
+        code_warnings = self.warnings.get(code, [])
+        code_warnings.append(GCodeMessage(line_number=line.line_number, code=code))
+        self.warnings[code] = code_warnings
+
+    def add_info(self, code, line):
+        """ Adds an info message to the info dictionary. """
+        code_infos = self.info.get(code, [])
+        code_infos.append(GCodeMessage(line_number=line.line_number, code=code))
+        self.info[code] = code_infos
+
+    def add_direct_output(self, message):
+        """ Adds a direct output message to the direct_output list. """
+        self.direct_output.append(GCodeCustomMessage(message))
 
     def compile_formatted_lines(self):
+        """ Compiles the formatted lines into a single string for output.
+            Individual lines are separated by a newline character.
+        """
         self.compiled_lines = '\n'.join([line.formatted_text for line in self.processed_code_lines])
 
     def get_axis_max_values_from_file(self):
@@ -255,9 +275,7 @@ class GCodeXXL(object):
                 self.y_max = Decimal(bit.replace('DY', ''))
 
     def verify_y_max_not_zero(self):
-        """
-        Detects if value of Y MAX in the file is 0 and prompts for a value
-        if it is 0.
+        """ Detects if value of Y MAX in the file is 0 and prompts for a value if it is 0.
         """
         if self.y_max is None:
             raise ProcessingException("Could not find Y value")
@@ -281,6 +299,10 @@ class GCodeXXL(object):
             self.file_data[0] = self.file_header
 
     def process_lines(self):
+        """ Loop through each line of the source file and create a GCodeLine
+            object for each line. once processed as a GCodeLine object, the
+            line is added to the processed_code_lines list.
+        """
         _line = 0
         for line in self.file_data:
             g_code_line = GCodeLine(line, _line)
@@ -288,9 +310,7 @@ class GCodeXXL(object):
             _line += 1
 
     def correct_rapid_speed(self):
-        """
-        Ensures that any G0 rapid move lines don't
-        exceed the maximum setting.
+        """ Ensures that any G0 rapid move lines don't exceed the maximum setting.
         """
         _line = 0
         for line in self.processed_code_lines:
@@ -302,9 +322,7 @@ class GCodeXXL(object):
             _line += 1
 
     def check_rapid_height(self):
-        """
-        Ensures no Z coordinate in a rapid move is below G0_RAPID_MIN_HEIGHT
-        """
+        """ Ensures no Z coordinate in a rapid move is below G0_RAPID_MIN_HEIGHT """
         for line in self.processed_code_lines:
             if line.code_type == 'G0' and line.Z:
                 if line.Z and Decimal(line.Z) >= 0:
@@ -313,17 +331,16 @@ class GCodeXXL(object):
                     self.add_warning(line=line, code=202)
 
     def check_depth_of_cuts(self):
-        """
-        Ensures no Z coordinate is below material thickness (max_z)
-        plus z_max_tolerance.
-        """
+        """ Ensures no Z coordinate is below material thickness (max_z) plus z_max_tolerance. """
         for line in self.processed_code_lines:
             if line.Z and Decimal(line.Z) > self.z_warning_threshold:
                 self.add_error(line=line, code=102)
-                # raise ProcessingException(line, "Z depth is greater than {self.z_warning_threshold:.4f}!!!")
 
     def update_code_for_boring_head(self):
-        """ Turns operations which use the boring into B coded lines and removes them if they are rapids """
+        """ Turns operations which use the boring head into
+            B coded lines and removes them if they are rapids to make the
+            G Code compatible with the SCM CNC machine.
+        """
         current_tool = None
         current_bore_tool = None
         current_spindle_speed = None
@@ -339,70 +356,29 @@ class GCodeXXL(object):
                     current_spindle_speed = line.S
                     # print(f"Handling boring rapid - {line.original_text}")
                     current_bore_tool = line.Tool
-                    # self.warnings.append(GCodeWarning(line, "This is a boring head operation, rapid not needed?"))  # noqa
                     if REMOVE_BORING_HEAD_RAPIDS:
                         del_lines.append(line)
                     else:
-                        line.formatted_text = f";*******BORING HEAD {line.formatted_text}************"
+                        line.formatted_text = f";*******BORING HEAD {line.formatted_text}************"  # noqa: line too long
                 elif line.code_type.startswith('G'):
                     line.change_to_boring_operation(current_bore_tool, current_spindle_speed)
                     line_count += 1
                     if (line.X, line.Y) not in boring_map:
                         boring_map.append((line.X, line.Y))
 
-        self.add_direct_output(f"Deleted illegal rapid from boring head operation on {len(del_lines)} lines.")
+        self.add_direct_output(
+            f"Deleted illegal rapid from boring head operation on {len(del_lines)} lines."
+        )
         self.add_direct_output(f"Converted {len(boring_map)} lines to boring head operation code.")
 
         for deleteme in del_lines:
             self.processed_code_lines.remove(deleteme)
 
-    # def format_boring_lines(self):
-    #     """ Sets up boring operations based on groups of B operations which have identical (X,Y) Values
-    #         A boring head operation should be like:
-    #         first line:
-    #         B X=14.1095 Y=10.9575 Z=.5 V=2540 S=4000 G=2 T=4 D=0.5;Toolpath 1196
-    #         where Z is the bottom of the hole
-    #         Subsequent lines are additional (X,Y) locations, like
-
-    #         B X=13.5844 Y=11.0915 S=4000 G=2 T=4 D=0.5
-    #         B X=10.8918 Y=11.4838 S=4000 G=2 T=4 D=0.5
-    #         B X=7.6015 Y=11.61 S=4000 G=2 T=4 D=0.5
-    #     """
-    #     boring_processes = []
-    #     boring_chunks = []
-    #     current_x = 0
-    #     current_y = 0
-    #     current_chunk = []
-    #     for line in self.processed_code_lines:
-    #         if line.code_type == 'B':
-    #             if line.X != current_x or line.Y != current_y:
-    #                 if len(current_chunk) > 0:
-    #                     boring_chunks.append(current_chunk)
-    #                 current_chunk = []
-    #                 current_chunk.append(line)
-    #                 current_x = line.X
-    #                 current_y = line.Y
-    #             else:
-    #                 current_chunk.append(line)
-    #     if len(current_chunk) > 0:
-    #         boring_chunks.append(current_chunk)
-
-    #     for chunk in boring_chunks:
-    #         boring_process = {
-    #             'X': chunk[0].X,
-    #             'Y': chunk[0].Y,
-    #             'Z': chunk[-1].Z,
-    #             'T': chunk[0].T,
-    #             'S': chunk[0].S,
-    #             'lines': [line.line_number for line in chunk],
-    #         }
-    #         boring_processes.append(boring_process)
-    #         boring_processes.reverse()
-
-    #         for bp in boring_processes:
-
     def add_x_blower(self):
-        """ Inserts an XBLOWER and C line ahead of any new G0 operation """
+        """ Inserts an XBLOWER and C line ahead of any new G0 operation.
+            These are machine specific commands that are required for the SCM CNC machine to
+            operate correctly.
+        """
         _index = 0
         current_code_type = None
         insert_points = []
@@ -433,10 +409,17 @@ class GCodeXXL(object):
         self.out_files.append(out_file_path)
 
     def write_new_files(self, target_dir):
+        """ Creates a .xxl file and a .pgm file in the output directory.
+            The files are identical, but both are required for Xilog to
+            successfully load the G Code into the SCM Machine's controller.
+        """
         self.copy_file_to_processed_files_dir('xxl', target_dir)
         self.copy_file_to_processed_files_dir('pgm', target_dir)
 
     def write_log_file(self, target_dir):
+        """ Write a log file with all errors, warnings, and info messages.  This is useful for
+            debugging and for keeping a record of what was processed in the G Code file.
+        """
         log_lines = []
         msg_types = ['errors', 'warnings', 'info']
         for mtype in msg_types:
@@ -444,7 +427,7 @@ class GCodeXXL(object):
             for code, instances in self_prop.items():
                 for inst in instances:
                     if inst.line_number:
-                        message = f"{inst.level} {code}: \"{inst.message}\" on line #{inst.line_number}"
+                        message = f"{inst.level} {code}: \"{inst.message}\" on line #{inst.line_number}"  # noqa: line too long
                     else:
                         message = f"{inst.level} {code}: \"{inst.message}\""
                     log_lines.append(message)
@@ -455,8 +438,3 @@ class GCodeXXL(object):
         out_file.write("\n".join(log_lines))
         out_file.close()
         self.out_files.append(out_file_path)
-
-        # self.info.append(
-        #     GCodeInfo(None, f"File processed and copied to: {out_file_path}")
-        # )
-        # print(f"File processed and copied to: {out_file_path}")
