@@ -12,10 +12,12 @@ from Lib.utils import (
 from Lib.g_code_parser import GCodeXXL
 from Lib.g_code_parser_messenger import CODES
 
-""" This script takes a G Code file in the XXL format and processes it to be compatible with
-    an SCM Pratix S 2015 CNC machine. It performs various checks and modifications on the
+""" This script takes a G Code file in XXL format and processes it to be compatible with
+    an SCM Pratix S12 2015 CNC machine. It performs various checks and modifications on the
     G Code lines, such as verifying axis values, correcting rapid speeds, checking depth of cuts,
     and adding necessary machine-specific commands.
+
+    The expected XXL format is generated from the included post-processor file for Vectric Aspire.
 
     The processed G Code is then compiled and written to new output files, along with a log file
     detailing any errors, warnings, or informational messages encountered during processing.
@@ -25,7 +27,7 @@ from Lib.g_code_parser_messenger import CODES
 
     If a processed file for the given XXL file already exists, it will be overwritten.
     If ARCHIVE_PROCESSED_FILE is set to True, the existing processed file will be renamed with a
-    timestamp and moved to the ARCHIVE_DIR before the new
+    timestamp and moved to the ARCHIVE_DIR before the new.
 """
 
 
