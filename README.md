@@ -15,4 +15,4 @@ It is based on output from Aspire 12.5.
 
 ## WARNING
 
-**This script runs for a very specific machine and workflow. Results are not garunteed. Safe operation of your CNC is not garunteed.**
+**This script runs for a very specific machine and workflow. Results are not garunteed. Safe operation of your CNC is not garunteed. Basically, don't even use this, it is just for me and it's a code sample I want to keep around.**
